@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+  id="Definitions_TelecomProvisioning"
+  targetNamespace="http://camunda.io/schema/1.0/bpmn">
+
+  <bpmn:error id="Error_InvalidConfig" name="Invalid configuration" errorCode="INVALID_CONFIG" />
+
+  <bpmn:process id="telecom-service-provisioning" name="Telecom Service Provisioning" isExecutable="true">
+    <bpmn:startEvent id="Start_OrderReceived" name="B2B Order Received">
+      <bpmn:outgoing>Flow_Start_Provision</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="Task_ProvisionNetwork" name="Provision Network Slice">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="provision-telecom-service" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Provision</bpmn:incoming>
+      <bpmn:outgoing>Flow_Provision_Gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:boundaryEvent id="Boundary_InvalidConfig" name="Invalid Configuration" attachedToRef="Task_ProvisionNetwork">
+      <bpmn:outgoing>Flow_Invalid_End</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorEventDefinition_InvalidConfig" errorRef="Error_InvalidConfig" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:exclusiveGateway id="Gateway_Capacity" name="Capacity Available?" default="Flow_Capacity_No">
+      <bpmn:incoming>Flow_Provision_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Capacity_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Capacity_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:intermediateCatchEvent id="Event_ActivationDelay" name="Simulate Network Activation">
+      <bpmn:incoming>Flow_Capacity_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_Timer_Success</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerDefinition_ActivationDelay">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT5S</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:endEvent id="End_Activated" name="Service Activated">
+      <bpmn:incoming>Flow_Timer_Success</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="End_CapacityPlanning" name="Escalated to Capacity Planning">
+      <bpmn:incoming>Flow_Capacity_No</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="End_InvalidRequest" name="Terminated: Invalid Request">
+      <bpmn:incoming>Flow_Invalid_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_Start_Provision" sourceRef="Start_OrderReceived" targetRef="Task_ProvisionNetwork" />
+    <bpmn:sequenceFlow id="Flow_Provision_Gateway" sourceRef="Task_ProvisionNetwork" targetRef="Gateway_Capacity" />
+
+    <bpmn:sequenceFlow id="Flow_Capacity_Yes" name="Yes" sourceRef="Gateway_Capacity" targetRef="Event_ActivationDelay">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">= provisioned = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Capacity_No" name="No / Default" sourceRef="Gateway_Capacity" targetRef="End_CapacityPlanning" />
+    <bpmn:sequenceFlow id="Flow_Timer_Success" sourceRef="Event_ActivationDelay" targetRef="End_Activated" />
+    <bpmn:sequenceFlow id="Flow_Invalid_End" sourceRef="Boundary_InvalidConfig" targetRef="End_InvalidRequest" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Telecom">
+    <bpmndi:BPMNPlane id="BPMNPlane_Telecom" bpmnElement="telecom-service-provisioning">
+      <bpmndi:BPMNShape id="Shape_Start" bpmnElement="Start_OrderReceived">
+        <dc:Bounds x="150" y="190" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task" bpmnElement="Task_ProvisionNetwork">
+        <dc:Bounds x="250" y="168" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Boundary" bpmnElement="Boundary_InvalidConfig">
+        <dc:Bounds x="307" y="230" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Gateway" bpmnElement="Gateway_Capacity" isMarkerVisible="true">
+        <dc:Bounds x="475" y="183" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Timer" bpmnElement="Event_ActivationDelay">
+        <dc:Bounds x="615" y="105" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_EndSuccess" bpmnElement="End_Activated">
+        <dc:Bounds x="755" y="105" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_EndCapacity" bpmnElement="End_CapacityPlanning">
+        <dc:Bounds x="615" y="275" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_EndInvalid" bpmnElement="End_InvalidRequest">
+        <dc:Bounds x="405" y="340" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="Edge_Start_Provision" bpmnElement="Flow_Start_Provision">
+        <di:waypoint x="186" y="208" />
+        <di:waypoint x="250" y="208" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Provision_Gateway" bpmnElement="Flow_Provision_Gateway">
+        <di:waypoint x="400" y="208" />
+        <di:waypoint x="475" y="208" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Capacity_Yes" bpmnElement="Flow_Capacity_Yes">
+        <di:waypoint x="500" y="183" />
+        <di:waypoint x="500" y="123" />
+        <di:waypoint x="615" y="123" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Capacity_No" bpmnElement="Flow_Capacity_No">
+        <di:waypoint x="500" y="233" />
+        <di:waypoint x="500" y="293" />
+        <di:waypoint x="615" y="293" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Timer_Success" bpmnElement="Flow_Timer_Success">
+        <di:waypoint x="651" y="123" />
+        <di:waypoint x="755" y="123" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Invalid_End" bpmnElement="Flow_Invalid_End">
+        <di:waypoint x="325" y="266" />
+        <di:waypoint x="325" y="358" />
+        <di:waypoint x="405" y="358" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
