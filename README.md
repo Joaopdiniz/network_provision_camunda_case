@@ -20,6 +20,13 @@ The project runs locally using Camunda 8 Run.
 * Camunda Python SDK
 * Java 21
 
+## Requirements
+
+- Camunda 8 Run 8.9.12
+- Python 3.13.11
+- Java 21
+- Camunda Orchestration Python SDK 9.0.1
+
 \---
 
 ## Project structure
