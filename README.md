@@ -4,30 +4,33 @@
 
 This project was created as a technical exercise using Camunda 8 and Python.
 
-The idea is to simulate a simple telecom service provisioning process.
+The goal is to simulate a simple telecom service provisioning process. The process receives information about a customer request, sends a service task to a Python worker, and then decides the next step based on the provisioning result.
 
-The process receives information about a customer request, sends the task to a Python worker, and then decides what should happen depending on the result.
+The project was developed and tested locally using Camunda 8 Run.
 
-The project runs locally using Camunda 8 Run.
-
-\---
+---
 
 ## Technologies used
 
+* Camunda 8
 * Camunda 8 Run
-* BPMN
+* BPMN 2.0
 * Python
-* Camunda Python SDK
+* Camunda Orchestration Python SDK
 * Java 21
+* HTTPX
 
 ## Requirements
 
-- Camunda 8 Run 8.9.12
-- Python 3.13.11
-- Java 21
-- Camunda Orchestration Python SDK 9.0.1
+* Camunda 8 Run 8.9.12
+* Python 3.13
+* Java 21
+* Camunda Orchestration Python SDK 9.0.1
+* HTTPX 0.28.1
 
-\---
+Java must be available and `JAVA_HOME` must be correctly configured before starting Camunda 8 Run.
+
+---
 
 ## Project structure
 
@@ -43,23 +46,28 @@ network_provision_camunda_case/
 ├── requirements-lock.txt
 ├── README.md
 └── .gitignore
-
 ```
-Camunda 8 Run, Java, the Python virtual environment and the offline
-wheelhouse are local runtime dependencies and are not included in
-the repository.
+
+Camunda 8 Run, Java, the Python virtual environment and the offline wheelhouse used during development are local runtime dependencies and are not included in this repository.
+
 ### Main files
 
-* `telecom-service-provisioning.bpmn`  
-Contains the BPMN process.
-* `worker.py`  
-Contains the Python worker that processes the provisioning task.
-* `deploy.py`  
-Deploys the BPMN process to Camunda.
-* `start\_process.py`  
-Starts process instances using different test scenarios.
+* `bpmn/telecom-service-provisioning.bpmn`
+  Contains the BPMN process.
 
-\---
+* `worker/worker.py`
+  Contains the Python job worker responsible for processing the provisioning task.
+
+* `deploy.py`
+  Deploys the BPMN process to Camunda using the official Camunda Python SDK.
+
+* `start_process.py`
+  Starts process instances for the available test scenarios using the Camunda REST API.
+
+* `requirements.txt`
+  Contains the direct Python dependencies required by the project.
+
+---
 
 ## Process flow
 
@@ -73,10 +81,10 @@ Provision Network Slice
         |
         v
 Capacity Available?
-      /     \\
-    Yes      No
-     |        |
-     v        v
+      /       \
+    Yes        No
+     |          |
+     v          v
 Activation   Capacity Planning
      |
      v
@@ -85,15 +93,15 @@ Service Activated
 
 There is also an error path for invalid input.
 
-For example, if the requested bandwidth is negative, the worker returns a BPMN error called:
+For example, if the requested bandwidth is invalid, the worker throws a BPMN error with the code:
 
 ```text
-INVALID\_CONFIG
+INVALID_CONFIG
 ```
 
-The process catches this error and finishes in the `Invalid Request` path.
+The BPMN boundary error event catches this error and the process finishes in the `Invalid Request` path.
 
-\---
+---
 
 ## Python worker
 
@@ -103,13 +111,14 @@ The Python worker listens for jobs with the type:
 provision-telecom-service
 ```
 
-The worker receives the variables from Camunda and executes the provisioning logic.
+The worker receives process variables from Camunda and executes the provisioning logic.
 
 The main input variables are:
 
-* `customer\_name`
-* `service\_type`
-* `bandwidth\_mbps`
+* `customer_name`
+* `service_type`
+* `bandwidth_mbps`
+* `simulate_technical_failure`
 
 For this demo, the available network capacity is simulated as:
 
@@ -119,20 +128,43 @@ For this demo, the available network capacity is simulated as:
 
 If the requested bandwidth is lower than or equal to the available capacity, the service can be provisioned.
 
-If it is higher, the process goes to the Capacity Planning path.
+If the requested bandwidth is higher than the available capacity, the job still completes successfully, but the BPMN gateway routes the process to the `Capacity Planning` path.
 
-The worker is configured to handle up to 5 jobs at the same time.
+The worker is configured with:
 
-\---
+```text
+max_concurrent_jobs = 5
+job_timeout = 30 seconds
+```
+
+The value of 5 concurrent jobs was chosen as a conservative value for the demonstration and was not based on production load testing.
+
+---
+
+## API usage
+
+The project uses both the official Camunda Python SDK and the Camunda REST API.
+
+`deploy.py` uses the official SDK to deploy the BPMN resource.
+
+`start_process.py` uses HTTPX to send a request directly to the local Camunda REST API:
+
+```text
+POST http://localhost:8080/v2/process-instances
+```
+
+The Python worker also uses the official Camunda SDK to activate, complete and fail jobs.
+
+---
 
 ## Test scenarios
 
-Four scenarios were created to test the process.
+Four scenarios are available.
 
-### Success
+### 1. Success
 
 ```powershell
-python .\\start\_process.py success
+python .\start_process.py success
 ```
 
 Example:
@@ -142,18 +174,16 @@ Requested bandwidth: 500 Mbps
 Available capacity: 1000 Mbps
 ```
 
-Expected result:
+Expected BPMN result:
 
 ```text
 Service Activated
 ```
 
-\---
-
-### Insufficient capacity
+### 2. Insufficient capacity
 
 ```powershell
-python .\\start\_process.py capacity
+python .\start_process.py capacity
 ```
 
 Example:
@@ -163,18 +193,22 @@ Requested bandwidth: 1500 Mbps
 Available capacity: 1000 Mbps
 ```
 
-Expected result:
+Expected worker result:
+
+```text
+Provisioning rejected due to insufficient capacity
+```
+
+Expected BPMN result:
 
 ```text
 Capacity Planning
 ```
 
-\---
-
-### Invalid request
+### 3. Invalid request
 
 ```powershell
-python .\\start\_process.py invalid
+python .\start_process.py invalid
 ```
 
 This scenario sends an invalid bandwidth value.
@@ -182,40 +216,65 @@ This scenario sends an invalid bandwidth value.
 The worker throws the BPMN error:
 
 ```text
-INVALID\_CONFIG
+INVALID_CONFIG
 ```
 
-Expected result:
+Expected BPMN result:
 
 ```text
 Invalid Request
 ```
 
-\---
-
-### Technical failure
+### 4. Technical failure
 
 ```powershell
-python .\\start\_process.py technical
+python .\start_process.py technical
 ```
 
-This scenario simulates a technical problem, such as a timeout when calling another system.
+This scenario simulates a temporary technical problem, such as a timeout while communicating with an external network controller.
 
-The job is retried by Camunda.
+The worker reports a technical job failure to Camunda. The service task is configured with three retries and a short retry backoff is used between attempts.
 
-A small retry delay is used between attempts.
+If the retries are exhausted, Camunda creates an incident that can be inspected in Operate.
 
-If all retries fail, Camunda creates an incident that can be checked in Operate.
-
-\---
+---
 
 ## How to run
 
-### 1\. Start Camunda
+### 1. Clone the repository
 
 ```powershell
-cd C:\\camunda\_case\\camunda\\c8run-8.9.12
-.\\c8run.exe start
+git clone https://github.com/Joaopdiniz/network_provision_camunda_case.git
+cd network_provision_camunda_case
+```
+
+### 2. Create the Python virtual environment
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Install the Python dependencies
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+### 4. Start Camunda 8 Run
+
+Download Camunda 8 Run separately and make sure Java 21 and `JAVA_HOME` are correctly configured.
+
+From the Camunda 8 Run directory:
+
+```powershell
+.\c8run.exe start
+```
+
+The local Camunda endpoint should be available at:
+
+```text
+http://localhost:8080
 ```
 
 Camunda Operate:
@@ -224,36 +283,31 @@ Camunda Operate:
 http://localhost:8080/operate
 ```
 
-Login:
+Default local credentials:
 
 ```text
 User: demo
 Password: demo
 ```
 
-\---
-
-### 2\. Activate the Python environment
+The cluster can also be checked using:
 
 ```powershell
-cd C:\\camunda\_case
-.\\.venv\\Scripts\\Activate.ps1
+Invoke-RestMethod http://localhost:8080/v2/topology
 ```
 
-\---
+### 5. Deploy the BPMN process
 
-### 3\. Deploy the BPMN process
+From the project directory:
 
 ```powershell
-python .\\deploy.py
+python .\deploy.py
 ```
 
-\---
-
-### 4\. Start the worker
+### 6. Start the worker
 
 ```powershell
-python .\\worker\\worker.py
+python .\worker\worker.py
 ```
 
 The worker should display:
@@ -265,39 +319,37 @@ Listening for job type: provision-telecom-service
 
 Keep this terminal open.
 
-\---
+### 7. Start a test process
 
-### 5\. Start a test process
-
-Open another PowerShell window and run, for example:
+Open another PowerShell window, activate the virtual environment and run one of the scenarios:
 
 ```powershell
-python .\\start\_process.py success
+python .\start_process.py success
 ```
 
-The process instance can then be checked in Camunda Operate.
+The process instance can then be inspected in Camunda Operate.
 
-\---
+---
 
 ## Error handling
 
-I separated the errors into two main cases.
+The project separates expected business errors from temporary technical failures.
 
 ### Business error
 
-Used when the request itself is invalid.
+A business error is used when the request itself is invalid and repeating the same operation would not solve the problem.
 
 Example:
 
 ```text
-bandwidth\_mbps = -10
+bandwidth_mbps = -10
 ```
 
-The worker throws `INVALID\_CONFIG`, and the BPMN process handles the error.
+The worker throws the BPMN error `INVALID_CONFIG`, which is caught by the BPMN process and routed to `Invalid Request`.
 
 ### Technical failure
 
-Used when something external could temporarily fail.
+A technical failure represents a problem that may be temporary.
 
 Example:
 
@@ -305,24 +357,37 @@ Example:
 Network controller timeout
 ```
 
-In this case, Camunda retries the job.
+In this case, the worker reports a job failure and Camunda handles the retry scheduling.
 
-If the retries are exhausted, an incident is created.
+If the configured retries are exhausted, an incident is created and can be inspected in Camunda Operate.
 
-\---
+---
 
-## Notes
+## Development and production considerations
 
 This is a simplified project created for demonstration purposes.
 
-The network capacity and subnet allocation are simulated inside the Python worker.
-
-In a real environment, the worker would probably communicate with external systems such as:
+The network capacity and subnet allocation are simulated inside the Python worker. In a real environment, the worker would likely communicate with external systems such as:
 
 * Network inventory APIs
 * Network controllers
 * Databases
-* Other internal services
+* Internal services
 
-The main goal of this project is to demonstrate the integration between a BPMN process in Camunda and a Python worker.
+For a production-oriented solution, additional considerations would include:
 
+* External configuration instead of hardcoded environment-specific values
+* Secret management
+* Idempotency for external side effects
+* Structured logging, metrics and monitoring
+* Automated tests and CI/CD
+* Containerizing the worker
+* Multiple worker replicas when horizontal scaling is required
+
+Camunda 8 Run was selected for this exercise because it provided a simple local setup that worked within the restrictions of the development environment. A container-based environment such as Docker Compose could be considered to improve reproducibility for shared development environments.
+
+---
+
+## Goal of the project
+
+The main goal of this project is to demonstrate the integration between a BPMN process in Camunda 8 and a Python job worker, including process routing, business error handling, technical failures, retries and incident handling.
