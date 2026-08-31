@@ -32,24 +32,22 @@ The project runs locally using Camunda 8 Run.
 ## Project structure
 
 ```text
-camunda\_case/
-├── .venv/
+network_provision_camunda_case/
 ├── bpmn/
 │   └── telecom-service-provisioning.bpmn
-├── camunda/
-│   └──c8run-8.9.12/
-├── java/
-│   └──jdk-21.0.12.1+1/
-├── wheelhouse/
 ├── worker/
 │   └── worker.py
 ├── deploy.py
-├── README.md
+├── start_process.py
 ├── requirements.txt
 ├── requirements-lock.txt
-└── start\_process.py
-```
+├── README.md
+└── .gitignore
 
+```
+Camunda 8 Run, Java, the Python virtual environment and the offline
+wheelhouse are local runtime dependencies and are not included in
+the repository.
 ### Main files
 
 * `telecom-service-provisioning.bpmn`  
